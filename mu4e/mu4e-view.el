@@ -216,12 +216,12 @@ found."
 	  (win (or (get-buffer-window buf) (split-window-vertically))))
     (select-window win)
     (switch-to-buffer buf)))
- 
+
 (defun mu4e-view (msg headersbuf)
   "Display the message MSG in a new buffer, and keep in sync with HDRSBUF.
 'In sync' here means that moving to the next/previous message in
 the the message view affects HDRSBUF, as does marking etc.
- 
+
 As a side-effect, a message that is being viewed loses its 'unread'
 marking if it still had that."
   (let* ((embedded ;; is it as an embedded msg (ie. message/rfc822 att)?
@@ -243,14 +243,14 @@ marking if it still had that."
 	  (goto-char (point-min))
 	  (mu4e~fontify-cited)
 	  (mu4e~fontify-signature)
-	  (mu4e~view-make-urls-clickable)	
+	  (mu4e~view-make-urls-clickable)
 	  (mu4e~view-show-images-maybe msg)
 	  (setq
 	    mu4e~view-buffer buf
 	    mu4e~view-headers-buffer headersbuf)
 	  (when embedded (local-set-key "q" 'kill-buffer-and-window))
 	  (mu4e-view-mode))))))
- 
+
 (defun mu4e~view-construct-header (field val &optional dont-propertize-val)
   "Return header field FIELD (as in `mu4e-header-info') with value
 VAL if VAL is non-nil. If DONT-PROPERTIZE-VAL is non-nil, do not
@@ -700,6 +700,43 @@ changes, it triggers a refresh."
 	;; this message will be marked as read.
 	(mu4e~proc-move msgid nil "+S-u-N")
 	t))))
+
+(defun mu4e~view-fontify-cited ()
+  "Colorize message content based on the citation level."
+  (save-excursion
+    (let ((more-lines t))
+      (goto-char (point-min))
+      (when (search-forward-regexp "^\n") ;; search the first empty line
+	(while more-lines
+	  ;; Get the citation level at point -- i.e., the number of '>'
+	  ;; prefixes, starting with 0 for 'no citation'
+	  (beginning-of-line 1)
+	  ;; consider only lines that heuristically look like a citation line...
+	  (when (looking-at "[[:blank:]]*[^[:blank:]\n]*[[:blank:]]*>")
+	    (let* ((level (how-many ">" (line-beginning-position 1)
+			    (line-end-position 1)))
+		    (face
+		      (unless (zerop level)
+			(intern-soft (format "mu4e-cited-%d-face" level)))))
+	      (when face
+		(add-text-properties (line-beginning-position 1)
+		  (line-end-position 1) `(face ,face)))))
+	  (setq more-lines
+	    (and (= 0 (forward-line 1))
+	      ;; we need to add this weird check below; it seems in some cases
+	      ;; `forward-line' continues to return 0, even when at the end,
+	      ;; which would lead to an infinite loop
+	      (not (= (point-max) (line-end-position))))))))))
+
+(defun mu4e~view-fontify-footer ()
+  "Give the message footers a distinctive color."
+  (let ((inhibit-read-only t))
+    (save-excursion
+      ;; give the footer a different color...
+      (goto-char (point-min))
+      (let ((p (search-forward "\n-- \n" nil t)))
+	(when p
+	  (add-text-properties p (point-max) '(face mu4e-footer-face)))))))
 
 (defun mu4e~view-browse-url-func (url)
   "Return a function that executes `browse-url' with URL.
