@@ -70,14 +70,14 @@
 
 
 (defun mu4e~main-action-str (str &optional func-or-shortcut)
-  "Highlight the first occurence of [..] in STR.
+  "Highlight the first occurence of [.] in STR.
 If FUNC-OR-SHORTCUT is non-nil and if it is a function, call it
-when STR is clicked (using RET or mouse-2); if FUNC-OR-SHORTCUT
-is a string, execute the corresponding keyboard action when it is
+when STR is clicked (using RET or mouse-2); if FUNC-OR-SHORTCUT is
+a string, execute the corresponding keyboard action when it is
 clicked."
   (let ((newstr
 	  (replace-regexp-in-string
-	    "\\[\\(\\w+\\)\\]"
+	    "\\[\\(..?\\)\\]"
 	    (lambda(m)
 	      (format "[%s]"
 		(propertize (match-string 1 m) 'face 'mu4e-highlight-face)))
@@ -92,7 +92,7 @@ clicked."
     (define-key map [mouse-2] func)
     (define-key map (kbd "RET") func)
     (put-text-property 0 (length newstr) 'keymap map newstr)
-    (put-text-property (string-match "\\w" newstr)
+    (put-text-property (string-match "\\[.+$" newstr)
       (- (length newstr) 1) 'mouse-face 'highlight newstr) newstr))
 
 
@@ -118,7 +118,7 @@ clicked."
 	"\n\n"
 	(propertize "  Basics\n\n" 'face 'mu4e-title-face)
 	(mu4e~main-action-str "\t* [j]ump to some maildir\n" 'mu4e-jump-to-maildir)
-	(mu4e~main-action-str "\t* enter a [s]earch query\n" 'mu4e-search)
+	(mu4e~main-action-str "\t* enter a [/]earch query\n" 'mu4e-search)
 	(mu4e~main-action-str "\t* [C]ompose a new message\n" 'mu4e-compose-new)
 	"\n"
 	(propertize "  Bookmarks\n\n" 'face 'mu4e-title-face)
