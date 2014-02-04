@@ -245,6 +245,21 @@ marking if it still had that."
 	  (mu4e~fontify-signature)
 	  (mu4e~view-make-urls-clickable)
 	  (mu4e~view-show-images-maybe msg)
+
+	  (let* ((headers-window
+		  (or (case mu4e-split-view
+			(horizontal (window-in-direction 'above))
+			(vertical (window-in-direction 'left)))
+		      (get-buffer-window mu4e~view-headers-buffer))))
+	    (when (and mu4e-split-view headers-window)
+	      (set-window-prev-buffers nil nil)
+	      (set-window-parameter nil
+				    'quit-restore
+				    (list 'window
+					  'window
+					  headers-window
+					  (current-buffer)))))
+
 	  (setq
 	    mu4e~view-buffer buf
 	    mu4e~view-headers-buffer headersbuf)
@@ -333,7 +348,7 @@ at POINT, or if nil, at (point)."
 	  (define-key map "C"  'mu4e~view-compose-contact)
 	  (define-key map "c"  'mu4e~view-copy-contact)
 	  (propertize
-	    email
+	    long
 	    'long long
 	    'short short
 	    'email email
