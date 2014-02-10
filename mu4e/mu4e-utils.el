@@ -1035,8 +1035,8 @@ displaying it). Do _not_ bury the current buffer, though."
 	(with-current-buffer (window-buffer win)
 	  (unless (eq curbuf (current-buffer))
 	    (when (member major-mode '(mu4e-headers-mode mu4e-view-mode))
-	      (unless (one-window-p t)
-		(delete-window win))))))) nil t))
+	      (when (eq t (window-deletable-p win))
+		(delete-window win))))))) t))
 
 
 (defun mu4e-get-time-date (prompt)
@@ -1094,7 +1094,7 @@ used in the view and compose modes."
 	  ;; prefixes, starting with 0 for 'no citation'
 	  (beginning-of-line 1)
 	  ;; consider only lines that heuristically look like a citation line...
-	  (when (looking-at "[[:blank:]]*[^[:blank:]\n]*[[:blank:]]*>")
+	  (when (looking-at mu4e-cited-regexp)
 	    (let* ((level (how-many ">" (line-beginning-position 1)
 			    (line-end-position 1)))
 		    (face

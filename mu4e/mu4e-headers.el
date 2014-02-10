@@ -269,7 +269,9 @@ headers."
   (when (buffer-live-p mu4e~headers-buffer)
     (with-current-buffer mu4e~headers-buffer
       (let* ((docid (mu4e-message-field msg :docid))
- 	      (point (mu4e~headers-docid-pos docid)))
+	     (initial-message-at-point (mu4e~headers-docid-at-point))
+	     (initial-column (current-column))
+	     (point (mu4e~headers-docid-pos docid)))
 	(when point ;; is the message present in this list?
 
 	  ;; if it's marked, unmark it now
@@ -304,8 +306,14 @@ headers."
 	  (unless is-move
 	    (mu4e~headers-header-handler msg point))
 
-	  ;; attempt to highlight the corresponding line and make it visible
-	  (mu4e~headers-highlight docid))))))
+	  (if (and initial-message-at-point
+		   (mu4e~headers-goto-docid initial-message-at-point))
+	      (progn
+		(move-to-column initial-column)
+		(mu4e~headers-highlight initial-message-at-point))
+	    ;; attempt to highlight the corresponding line and make it visible
+	    (mu4e~headers-highlight docid))
+	  )))))
 
 
 (defun mu4e~headers-remove-handler (docid)
@@ -1365,7 +1373,7 @@ docid. Otherwise, return nil."
       ;; attempt to highlight the new line, display the message
       (mu4e~headers-highlight docid)
       ;; update message view if it was already showing
-      (when (window-live-p mu4e~headers-view-win)
+      (when (and mu4e-split-view (window-live-p mu4e~headers-view-win))
 	(mu4e-headers-view-message))
       docid)))
 
