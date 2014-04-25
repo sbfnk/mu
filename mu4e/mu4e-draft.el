@@ -79,13 +79,15 @@ This function uses gnus' `mu4e-compose-cite-function', and as such
 all its settings apply."
   (with-temp-buffer
     (when (fboundp 'mu4e-view-message-text) ;; keep bytecompiler happy
-      (insert (mu4e-view-message-text msg))
+      (let ((mu4e-view-date-format "%Y-%m-%dT%T%z"))
+	(insert (mu4e-view-message-text msg)))
       (message-yank-original)
       (goto-char (point-min))
       (push-mark (point-max))
       ;; set the the signature separator to 'loose', since in the real world,
       ;; many message don't follow the standard...
-      (let ((message-signature-separator "^-- *$"))
+      (let ((message-signature-separator "^-- *$")
+	     (message-signature-insert-empty-line t))
 	(funcall mu4e-compose-cite-function))
       (pop-mark)
       (goto-char (point-min))
@@ -420,7 +422,8 @@ from either `mu4e~draft-reply-construct', or
 	    (t (mu4e-error "unsupported compose-type %S" compose-type))))
 	;; include the message signature (if it's set)
 	(when mu4e-compose-signature-auto-include
-	  (let ((message-signature mu4e-compose-signature))
+	  (let ((message-signature mu4e-compose-signature)
+		 (message-signature-insert-empty-line t))
 	    (message-insert-signature)
 	    (mu4e~fontify-signature)))))
 	  ;; evaluate mu4e~drafts-drafts-folder once, here, and use that value

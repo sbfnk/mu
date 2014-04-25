@@ -628,8 +628,11 @@ This is used by the completion function in mu4e-compose."
 			   (< tstamp1 tstamp2)
 			   (< freq1 freq2)))))))
     (dolist (contact contacts)
-      (let ((name (plist-get contact :name))
-	     (mail (plist-get contact :mail)))
+      (let* ((contact
+	       (if mu4e-contact-rewrite-function
+		 (funcall mu4e-contact-rewrite-function contact) contact))
+              (name (plist-get contact :name))
+              (mail (plist-get contact :mail)))
 	(when mail
 	  (unless ;; ignore some address ('noreply' etc.)
 	    (and mu4e-compose-complete-ignore-address-regexp
@@ -1086,30 +1089,16 @@ receive (:info add :path <path> :docid <docid>) as well as (:update
   "Colorize message content based on the citation level. This is
 used in the view and compose modes."
   (save-excursion
-    (let ((more-lines t))
-      (goto-char (point-min))
-      (when (search-forward-regexp "^\n" nil t) ;; search the first empty line
-	(while more-lines
-	  ;; Get the citation level at point -- i.e., the number of '>'
-	  ;; prefixes, starting with 0 for 'no citation'
-	  (beginning-of-line 1)
-	  ;; consider only lines that heuristically look like a citation line...
-	  (when (looking-at mu4e-cited-regexp)
-	    (let* ((level (how-many ">" (line-beginning-position 1)
-			    (line-end-position 1)))
-		    (face
-		      (unless (zerop level)
-			(intern-soft (format "mu4e-cited-%d-face" level)))))
-	      (when face
-		(add-text-properties (line-beginning-position 1)
-		  (line-end-position 1) `(face ,face)))))
-	  (setq more-lines
-	    (and (= 0 (forward-line 1))
-	      ;; we need to add this weird check below; it seems in some cases
-	      ;; `forward-line' continues to return 0, even when at the end,
-	      ;; which would lead to an infinite loop
-	      (not (= (point-max) (line-end-position))))))))))
-
+    (goto-char (point-min))
+    (when (search-forward-regexp "^\n" nil t) ;; search the first empty line
+      (while (re-search-forward mu4e-cited-regexp nil t)
+        (let* ((level (string-width (replace-regexp-in-string
+                                     " " "" (match-string 1))))
+               (face  (unless (zerop level)
+                        (intern-soft (format "mu4e-cited-%d-face" level)))))
+          (when face
+            (add-text-properties (line-beginning-position 1)
+                                 (line-end-position 1) `(face ,face))))))))
 
 (defun mu4e~fontify-signature ()
   "Give the message signatures a distinctive color. This is used in

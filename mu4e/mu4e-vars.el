@@ -181,7 +181,7 @@ view buffer."
   :type 'boolean
   :group 'mu4e)
 
-(defcustom mu4e-cited-regexp "^[[:blank:]]*[^[:blank:]\n]*[[:blank:]]*>"
+(defcustom mu4e-cited-regexp "^ *\\(\\(>+ ?\\)+\\)"
   "Regular expression that determines whether a line is a citation."
   :type 'string
   :group 'mu4e)
@@ -248,6 +248,28 @@ Date must be a string, in a format parseable by
 Set to nil to not have any time-based restriction."
   :type 'string
   :group 'mu4e-compose)
+
+
+;;; names and mail-addresses can be mapped onto their canonical
+;;; counterpart.  use the customizeable function
+;;; mu4e-canonical-contact-function to do that.  below the identity
+;;; function for mapping a contact onto the canonical one.
+(defun mu4e-contact-identity (contact)
+  "This returns the name and the mail-address of a contact.
+It's used as an identity function for converting contacts to their
+canonical counterpart."
+    (let ((name (plist-get contact :name))
+          (mail (plist-get contact :mail)))
+      (list :name name :mail mail)))
+
+(defcustom mu4e-contact-rewrite-function nil
+  "Function to be used for when processing contacts and rewrite
+them, for example you may use this for correcting typo's, changed
+names and adapting addresses or names to company policies. As as
+example of this, see `mu4e-contact-identity'."
+  :type 'function
+  :group 'mu4e-compose)
+
 
 (defcustom mu4e-compose-complete-ignore-address-regexp "no-?reply"
   "Ignore any e-mail addresses for completion if they match this regexp."
@@ -524,7 +546,12 @@ mu4e-compose-mode."
   "Face for the separator between headers / message in
 mu4e-compose-mode."
   :group 'mu4e-faces)
- 
+
+(defface mu4e-region-code
+    '((t (:background "DarkSlateGray")))
+  "Face for highlighting marked region in mu4e-view buffer."
+  :group 'mu4e-faces)
+
 ;; headers info
 (defconst mu4e-header-info
   '( (:attachments .

@@ -506,12 +506,12 @@ at POINT, or if nil, at (point)."
 		    (propertize name 'face 'mu4e-link-face
 		      'keymap mu4e-view-attachments-header-keymap
 		      'mouse-face 'highlight
-		      'help-echo
+		      'help-echo (concat
+				  "[mouse-1] or [M-RET] opens the attachment\n"
+				  "[mouse-2] or [S-RET] offers to save it")
 		      'mu4e-msg msg
 		      'mu4e-attnum id
-		      (concat
-			"[mouse-1] or [M-RET] opens the attachment\n"
-			"[mouse-2] or [S-RET] offers to save it"))
+		      )
 		    (when (and size (> size 0))
 		      (propertize (format "(%s)" (mu4e-display-size size))
                                   'face 'mu4e-header-key-face)))))
@@ -954,6 +954,32 @@ all messages in the subthread at point in the headers view."
   "Run `mu4e-headers-search-edit' in the headers buffer."
   (interactive)
   (mu4e~view-in-headers-context (mu4e-headers-search-edit)))
+
+(defun mu4e-mark-region-code ()
+  "Highlight region marked with `message-mark-inserted-region'.
+Add this function to `mu4e-view-mode-hook' to enable this feature."
+  (require 'message)
+  (let (beg end ov-beg ov-end ov-inv)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward
+              (concat "^" message-mark-insert-begin) nil t)
+        (setq ov-beg (match-beginning 0)
+              ov-end (match-end 0)
+              ov-inv (make-overlay ov-beg ov-end)
+              beg    ov-end)
+        (overlay-put ov-inv 'invisible t)
+        (when (re-search-forward
+               (concat "^" message-mark-insert-end) nil t)
+          (setq ov-beg (match-beginning 0)
+                ov-end (match-end 0)
+                ov-inv (make-overlay ov-beg ov-end)
+                end    ov-beg)
+          (overlay-put ov-inv 'invisible t))
+        (when (and beg end)
+          (let ((ov (make-overlay beg end)))
+            (overlay-put ov 'face 'mu4e-region-code))
+          (setq beg nil end nil))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; attachment handling
