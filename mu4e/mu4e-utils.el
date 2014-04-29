@@ -628,8 +628,11 @@ This is used by the completion function in mu4e-compose."
 			   (< tstamp1 tstamp2)
 			   (< freq1 freq2)))))))
     (dolist (contact contacts)
-      (let ((name (plist-get contact :name))
-	     (mail (plist-get contact :mail)))
+      (let* ((contact
+	       (if mu4e-contact-rewrite-function
+		 (funcall mu4e-contact-rewrite-function contact) contact))
+              (name (plist-get contact :name))
+              (mail (plist-get contact :mail)))
 	(when mail
 	  (unless ;; ignore some address ('noreply' etc.)
 	    (and mu4e-compose-complete-ignore-address-regexp

@@ -79,7 +79,8 @@ This function uses gnus' `mu4e-compose-cite-function', and as such
 all its settings apply."
   (with-temp-buffer
     (when (fboundp 'mu4e-view-message-text) ;; keep bytecompiler happy
-      (insert (mu4e-view-message-text msg))
+      (let ((mu4e-view-date-format "%Y-%m-%dT%T%z"))
+	(insert (mu4e-view-message-text msg)))
       (message-yank-original)
       (goto-char (point-min))
       (push-mark (point-max))
@@ -244,7 +245,9 @@ separator is never written to the message file. Also see
     (mu4e~draft-remove-mail-header-separator)
     (let ((sepa (propertize mail-header-separator
 		  'intangible t
-		  'read-only "Can't touch this"
+		  ;; don't make this read-only, message-mode
+		  ;; seems to require it being writable in some cases
+		  ;;'read-only "Can't touch this"
 		  'rear-nonsticky t
 		  'font-lock-face 'mu4e-compose-separator-face)))
       (widen)

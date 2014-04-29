@@ -157,7 +157,7 @@ The first letter of NAME is used as a shortcut character.")
 This is to determine what is the parent docid for embedded
 message extracted at some path.")
 
-(defconst mu4e~view-url-regexp
+(defvar mu4e-view-url-regexp
   "\\(\\(https?\\://\\|mailto:\\)[-+\[:alnum:\].?_$%/+&#@!*~,:;=/()]+\\)"
   "Regexp that matches http:/https:/mailto: URLs; match-string 1
 will contain the matched URL, if any.")
@@ -244,6 +244,13 @@ found."
     (select-window win)
     (switch-to-buffer buf)))
 
+(defun mu4e~delete-all-overlays ()
+  "`delete-all-overlays' with compatibility fallback."
+  (if (functionp 'delete-all-overlays)
+    (delete-all-overlays)
+    (remove-overlays)))
+
+
 (defun mu4e-view (msg headersbuf)
   "Display the message MSG in a new buffer, and keep in sync with HDRSBUF.
 'In sync' here means that moving to the next/previous message in
@@ -266,7 +273,7 @@ marking if it still had that."
       (when (or embedded (not (mu4e~view-mark-as-read msg)))
 	(let ((inhibit-read-only t))
 	  (erase-buffer)
-	  (delete-all-overlays)
+	  (mu4e~delete-all-overlays)
 	  (insert (mu4e-view-message-text msg))
 	  (goto-char (point-min))
 	  (mu4e~fontify-cited)
@@ -838,7 +845,7 @@ Also number them so they can be opened using `mu4e-view-go-to-url'."
       (setq mu4e~view-link-map ;; buffer local
 	(make-hash-table :size 32 :weakness nil))
       (goto-char (point-min))
-      (while (re-search-forward mu4e~view-url-regexp nil t)
+      (while (re-search-forward mu4e-view-url-regexp nil t)
 	(let* ((url (match-string 0))
 	       (ov (make-overlay (match-beginning 0) (match-end 0))))
 	  (puthash (incf num) url mu4e~view-link-map)
@@ -954,6 +961,32 @@ all messages in the subthread at point in the headers view."
   "Run `mu4e-headers-search-edit' in the headers buffer."
   (interactive)
   (mu4e~view-in-headers-context (mu4e-headers-search-edit)))
+
+(defun mu4e-mark-region-code ()
+  "Highlight region marked with `message-mark-inserted-region'.
+Add this function to `mu4e-view-mode-hook' to enable this feature."
+  (require 'message)
+  (let (beg end ov-beg ov-end ov-inv)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward
+              (concat "^" message-mark-insert-begin) nil t)
+        (setq ov-beg (match-beginning 0)
+              ov-end (match-end 0)
+              ov-inv (make-overlay ov-beg ov-end)
+              beg    ov-end)
+        (overlay-put ov-inv 'invisible t)
+        (when (re-search-forward
+               (concat "^" message-mark-insert-end) nil t)
+          (setq ov-beg (match-beginning 0)
+                ov-end (match-end 0)
+                ov-inv (make-overlay ov-beg ov-end)
+                end    ov-beg)
+          (overlay-put ov-inv 'invisible t))
+        (when (and beg end)
+          (let ((ov (make-overlay beg end)))
+            (overlay-put ov 'face 'mu4e-region-code))
+          (setq beg nil end nil))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; attachment handling
