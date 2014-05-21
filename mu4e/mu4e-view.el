@@ -157,7 +157,7 @@ The first letter of NAME is used as a shortcut character.")
 This is to determine what is the parent docid for embedded
 message extracted at some path.")
 
-(defconst mu4e~view-url-regexp
+(defvar mu4e-view-url-regexp
   "\\(\\(https?\\://\\|mailto:\\)[-+\[:alnum:\].?_$%/+&#@!*~,:;=/()]+\\)"
   "Regexp that matches http:/https:/mailto: URLs; match-string 1
 will contain the matched URL, if any.")
@@ -244,6 +244,13 @@ found."
     (select-window win)
     (switch-to-buffer buf)))
 
+(defun mu4e~delete-all-overlays ()
+  "`delete-all-overlays' with compatibility fallback."
+  (if (functionp 'delete-all-overlays)
+    (delete-all-overlays)
+    (remove-overlays)))
+
+
 (defun mu4e-view (msg headersbuf)
   "Display the message MSG in a new buffer, and keep in sync with HDRSBUF.
 'In sync' here means that moving to the next/previous message in
@@ -266,12 +273,12 @@ marking if it still had that."
       (when (or embedded (not (mu4e~view-mark-as-read msg)))
 	(let ((inhibit-read-only t))
 	  (erase-buffer)
-	  (delete-all-overlays)
+	  (mu4e~delete-all-overlays)
 	  (insert (mu4e-view-message-text msg))
 	  (goto-char (point-min))
 	  (mu4e~fontify-cited)
 	  (mu4e~fontify-signature)
-	  (mu4e~view-make-urls-clickable)	
+	  (mu4e~view-make-urls-clickable)
 	  (mu4e~view-show-images-maybe msg)
 
 	  (let* ((headers-window
@@ -308,7 +315,7 @@ Meant to be evoked from interactive commands."
            (window-buffer (posn-window posn)))
           ))
     (get-text-property (point) prop)))
- 
+
 (defun mu4e~view-construct-header (field val &optional dont-propertize-val)
   "Return header field FIELD (as in `mu4e-header-info') with value
 VAL if VAL is non-nil. If DONT-PROPERTIZE-VAL is non-nil, do not
@@ -838,7 +845,7 @@ Also number them so they can be opened using `mu4e-view-go-to-url'."
       (setq mu4e~view-link-map ;; buffer local
 	(make-hash-table :size 32 :weakness nil))
       (goto-char (point-min))
-      (while (re-search-forward mu4e~view-url-regexp nil t)
+      (while (re-search-forward mu4e-view-url-regexp nil t)
 	(let* ((url (match-string 0))
 	       (ov (make-overlay (match-beginning 0) (match-end 0))))
 	  (puthash (incf num) url mu4e~view-link-map)
@@ -851,7 +858,7 @@ Also number them so they can be opened using `mu4e-view-go-to-url'."
 	       keymap ,mu4e-view-clickable-urls-keymap
 	       help-echo
 	       "[mouse-1] or [M-RET] to open the link"))
-	  (overlay-put ov 'after-string 
+	  (overlay-put ov 'after-string
 		       (propertize (format "[%d]" num)
 				   'face 'mu4e-url-number-face))
 	  )))))
