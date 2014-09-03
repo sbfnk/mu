@@ -313,6 +313,7 @@ You can append flags."
   (when mu4e-compose-auto-include-date
     (mu4e~draft-header "Date" (message-make-date))))
 
+
 (defconst mu4e~draft-reply-prefix "Re: "
   "String to prefix replies with.")
 
