@@ -810,7 +810,7 @@ W            toggle include-related
 marking
 -------
 d            mark for moving to the trash folder
-=            mark for remove thrash flags ('untrash')
+=            mark for removing trash flag ('untrash')
 DEL,D        mark for complete deletion
 m            mark for moving to another maildir folder
 r            mark for refiling
@@ -823,7 +823,7 @@ U            unmark *all* messages
 %            mark based on a regular expression
 T,t          mark whole thread, subthread
 
-<insert>     mark for 'something' (decide later)
+<insert>,*   mark for 'something' (decide later)
 #            resolve deferred 'something' marks
 
 x            execute actions for the marked messages
@@ -1076,7 +1076,7 @@ M-right      next query
 marking
 -------
 d            mark for moving to the trash folder
-=            mark for remove thrash flags ('untrash')
+=            mark for removing trash flag ('untrash')
 DEL,D        mark for complete deletion
 m            mark for moving to another maildir folder
 r            mark for refiling
@@ -1088,7 +1088,7 @@ U            unmark *all* messages
 %            mark based on a regular expression
 T,t          mark whole thread, subthread
 
-<insert>     mark for 'something' (decide later)
+<insert>,*   mark for 'something' (decide later)
 #            resolve deferred 'something' marks
 
 x            execute actions for the marked messages
@@ -1685,6 +1685,9 @@ date:2w.. emacs
 @verbatim
 list:mu-discuss.googlegroups.com
 @end verbatim
+Note - in the @ref{Headers view} you may see the 'friendly name' for a
+list; however, when searching you need the real name. You can see the
+real name for a mailing list from the friendly name's tool-tip.
 
 @item Get messages with a subject soccer, Socrates, society, ...; note that the '*'-wildcard can only appear as a term's rightmost character:
 @verbatim
@@ -1836,12 +1839,12 @@ previous/next queries, you can use @kbd{M-x mu4e-headers-forget-queries}.
 It can be useful to narrow existing search results, that is, to add some
 clauses to the current query to match fewer messages.
 
-For example, suppose you're looking at the some mailing list, perhaps by
+For example, suppose you're looking at some mailing list, perhaps by
 jumping to a maildir (@kbd{M-x mu4e-headers-jump-to-maildir}, @key{j}) or
 because you followed some bookmark (@kbd{M-x mu4e-headers-search-bookmark},
 @key{b}). Now, you want to narrow things down to only those messages that have
 attachments.
-1
+
 This is when @kbd{M-x mu4e-headers-search-narrow} (@key{/}) comes in handy. It
 asks for an additional search pattern, which is appended to the current search
 query, in effect getting you the subset of the currently shown headers that
@@ -1922,7 +1925,7 @@ mu4e-headers-mark-subthread}, respectively
 @verbatim
   mark for/as  | keybinding  | description
  --------------+-------------+--------------------------
-  'something'  | <insert>    | mark now, decide later
+  'something'  | *, <insert> | mark now, decide later
   delete       | D, <delete> | delete
   flag         | +           | mark as 'flagged' ('starred')
   move         | m           | move to some maildir
@@ -2304,7 +2307,7 @@ guidelines for doing so.
 There are a number of places where @t{mu4e} lets you plug in your own
 functions:
 @itemize
-@item Custom functions for for message headers in the message-view and
+@item Custom functions for message headers in the message-view and
 headers-view - see @ref{HV Custom headers}, @ref{MSGV Custom headers}
 @item Using message-specific folders for drafts, trash, sent messages and
 refiling, based on a function - see @ref{Dynamic folders}
@@ -2342,19 +2345,21 @@ kinds of assumptions, and they are subject to change, and should therefore
 @end verbatim
 
 @noindent
-In addition, you should use functions in the right context; functions that
-start with @t{mu4e-view-} are only applicable to the message view, while
-functions starting with @t{mu4e-headers-} are only applicable to the headers
-view. Functions without such prefixes are applicable everywhere.
+In addition, you should use functions in the right context; functions
+that start with @t{mu4e-view-} are only applicable to the message view,
+while functions starting with @t{mu4e-headers-} are only applicable to
+the headers view. Functions without such prefixes are applicable
+everywhere.
 
 @node Message functions
 @section Message functions
 
-Many functions in @t{mu4e} deal with message plist (property lists). They
-contain information about messages, such as sender and recipient, subject,
-date and so on. To deal with these plists, there are a number of
-@code{mu4e-message-} functions (in @file{mu4e-message.el}), such as
-@code{mu4e-message-field} and @code{mu4e-message-at-point}
+Many functions in @t{mu4e} deal with message plist (property
+lists). They contain information about messages, such as sender and
+recipient, subject, date and so on. To deal with these plists, there are
+a number of @code{mu4e-message-} functions (in @file{mu4e-message.el}),
+such as @code{mu4e-message-field} and @code{mu4e-message-at-point}, and
+a shortcut to combine the two, @code{mu4e-message-field-at-point}.
 
 For example, to get the subject of the message at point, in either the headers
 view or the message view, you could write:
@@ -2376,6 +2381,24 @@ recipients of the message?''), there is a convenience function
 @item The message body is only available in the message view, not in the
 headers view.
 @end itemize
+
+Note that the message-functions work available to @t{mu4e} -- the
+headers that are stored in the database and, in
+@code{mu4e-message-view}-context, the message body.
+
+If you need access to other parts of the message, it is possible to do
+so by hand, using the raw-message and some third-party tool like
+@t{procmail}'s @t{formail}:
+@lisp
+(defun my-mu4e-any-message-field-at-point (hdr)
+  "Quick & dirty way to get an arbitrary header HDR at
+point. Requires the 'formail' tool from procmail."
+   (replace-regexp-in-string "\n$" ""
+     (shell-command-to-string
+       (concat "formail -x " hdr " -c < "
+	 (shell-quote-argument (mu4e-message-field-at-point :path))))))
+@end lisp
+
 
 @node Utility functions
 @section Utility functions
@@ -3231,10 +3254,10 @@ value)} pairs:
     ("Account2"
      (mu4e-sent-folder "/Account2/Saved Items")
      (mu4e-drafts-folder "/Account2/Drafts")
-     (user-mail-address "my.address@@account2.tld)
-     (smtpmail-default-smtp-server "smtp.account2.tld)
+     (user-mail-address "my.address@@account2.tld")
+     (smtpmail-default-smtp-server "smtp.account2.tld")
      (smtpmail-local-domain "account2.tld")
-     (smtpmail-smtp-server "smtp.account2.tld)
+     (smtpmail-smtp-server "smtp.account2.tld")
      (smtpmail-stream-type starttls)
      (smtpmail-smtp-service 587))))
 @end lisp
