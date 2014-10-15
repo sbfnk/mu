@@ -1,6 +1,5 @@
-;;; org-mu4e -- Support for links to mu4e messages/queries from within
-;;; org-mode, and for writing message in org-mode, sending them as
-;;; rich-text
+;;; org-mu4e -- Support for links to mu4e messages/queries from within org-mode,
+;;; and for writing message in org-mode, sending them as rich-text
 ;;
 ;; Copyright (C) 2012 Dirk-Jan C. Binnema
 
@@ -28,9 +27,7 @@
 
 ;;; Code:
 
-
-;; The expect version here is org 8.x
-
+;; This should support org-mode versions 6.x. 7.x
 
 ;; the 'noerror is just to make sure bytecompilations does not break...
 ;; FIXME: find a better solution
@@ -80,38 +77,14 @@ Example usage:
       ;; storing links to messages
     ((eq major-mode 'mu4e-view-mode)
       (let* ((msg  (mu4e-message-at-point))
-             (msgid   (or (plist-get msg :message-id) "<none>"))
-             (from  (or (plist-get msg :from) '(("none" . "none"))))
-             (fromname (car (car from)))
-             (fromaddress (cdr (car from)))
-             (to  (or (plist-get msg :to) '(("none" . "none"))))
-             (toname (car (car to)))
-             (toaddress (cdr (car to)))
-             (fromto (if (mu4e-user-mail-address-p fromaddress)
-                         (format "to %s <%s>" toname toaddress)
-                       (format "from %s <%s>" fromname fromaddress)))
-             (date (plist-get msg :date))
-             (date-ts (format-time-string (org-time-stamp-format t) date))
-             (date-ts-ia (format-time-string (org-time-stamp-format t t) date))
-             (subject  (or (plist-get msg :subject) "<none>"))
-             link)
-        (org-store-link-props :type "mu4e" :link link
-                              :message-id msgid)
-        (setq link (concat "mu4e:msgid:" msgid))
-        (org-add-link-props :link link
-                            :to (format "%s <%s>" toname toaddress)
-                            :toname toname
-                            :toaddress toaddress
-                            :from (format "%s <%s>" fromname fromaddress)
-                            :fromname fromname
-                            :fromaddress fromaddress
-                            :fromto fromto
-                            :date date-ts-ia
-                            :date-timestamp date-ts
-                            :date-timestamp-inactive date-ts-ia
-                            :subject subject
-                            :description (funcall org-mu4e-link-desc-func msg))
-        link))))
+	     (msgid   (or (plist-get msg :message-id) "<none>"))
+	     link)
+       (org-store-link-props :type "mu4e" :link link
+			     :message-id msgid)
+       (setq link (concat "mu4e:msgid:" msgid))
+       (org-add-link-props :link link
+			   :description (funcall org-mu4e-link-desc-func msg))
+       link))))
 
 (org-add-link-type "mu4e" 'org-mu4e-open)
 (add-hook 'org-store-link-functions 'org-mu4e-store-link)
@@ -180,8 +153,8 @@ and images in a multipart/related part."
 
 (defun org~mu4e-mime-convert-to-html ()
   "Convert the current body to html."
-  (unless (fboundp 'org-export-string-as)
-    (mu4e-error "require function 'org-export-string-as not found."))
+  (unless (fboundp 'org-export-string)
+    (mu4e-error "require function 'org-export-string not found."))
   (unless (executable-find "dvipng")
     (mu4e-error "Required program dvipng not found"))
   (let* ((begin
@@ -192,7 +165,8 @@ and images in a multipart/related part."
 	    (raw-body (buffer-substring begin end))
 	    (tmp-file (make-temp-name (expand-file-name "mail"
 					temporary-file-directory)))
-            (body (org-export-string-as raw-body 'html t))
+	    (body (org-export-string raw-body 'org
+		    (file-name-directory tmp-file)))
 	    ;; because we probably don't want to skip part of our mail
 	    (org-export-skip-text-before-1st-heading nil)
 	    ;; because we probably don't want to export a huge style file
@@ -204,7 +178,8 @@ and images in a multipart/related part."
 	    ;; to hold attachments for inline html images
 	    (html-and-images
 	      (org~mu4e-mime-replace-images
-                (org-export-string-as raw-body 'html t)
+		(org-export-string raw-body 'html
+		  (file-name-directory tmp-file))
 		tmp-file))
 	    (html-images (cdr html-and-images))
 	    (html (car html-and-images)))

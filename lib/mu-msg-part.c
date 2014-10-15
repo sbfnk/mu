@@ -30,10 +30,6 @@
 #include "mu-msg-priv.h"
 #include "mu-msg-part.h"
 
-static gboolean handle_children (MuMsg *msg,
-				 GMimeMessage *mime_msg, MuMsgOptions opts,
-				 unsigned index, MuMsgPartForeachFunc func,
-				 gpointer user_data);
 struct _DoData {
 	GMimeObject *mime_obj;
 	unsigned    index;
@@ -46,8 +42,13 @@ do_it_with_index (MuMsg *msg, MuMsgPart *part, DoData *ddata)
 	if (ddata->mime_obj)
 		return;
 
-	if (part->index == ddata->index)
+	if (part->index == ddata->index) {
+		/* Add a reference to this object, this way if it is
+		 * encrypted it will not be garbage collected before
+		 * we are done with it. */
+		g_object_ref (part->data);
 		ddata->mime_obj = (GMimeObject*)part->data;
+	}
 }
 
 static GMimeObject*
@@ -151,16 +152,28 @@ accumulate_text (MuMsg *msg, MuMsgPart *part, GString **gstrp)
 		accumulate_text_part (msg, part, gstrp);
 }
 
+/* declaration, so we can use it earlier */
+static gboolean handle_mime_object (MuMsg *msg,
+				    GMimeObject *mobj, GMimeObject *parent,
+				    MuMsgOptions opts,
+				    unsigned *index, MuMsgPartForeachFunc func,
+				    gpointer user_data);
+
 static char*
-get_text_from_mime_msg (MuMsg *msg, GMimeMessage *mmsg, MuMsgOptions opts,
-			unsigned index)
+get_text_from_mime_msg (MuMsg *msg, GMimeMessage *mmsg, MuMsgOptions opts)
 {
 	GString *gstr;
+	unsigned index;
 
-	gstr = g_string_sized_new (4096);
-	handle_children (msg, mmsg, opts, index,
-			 (MuMsgPartForeachFunc)accumulate_text,
-			 &gstr);
+	index = 0;
+	gstr  = g_string_sized_new (4096);
+	handle_mime_object (msg,
+	                    mmsg->mime_part,
+			    (GMimeObject *) mmsg,
+			    opts,
+			    &index,
+			    (MuMsgPartForeachFunc)accumulate_text,
+			    &gstr);
 
 	return g_string_free (gstr, FALSE);
 }
@@ -199,8 +212,7 @@ mu_msg_part_get_text (MuMsg *msg, MuMsgPart *self, MuMsgOptions opts)
 	/* apparently, g_mime_message_part_get_message may still
 	 * return NULL */
  	if (mime_msg)
-		return get_text_from_mime_msg (msg, mime_msg,
-					       opts, self->index);
+		return get_text_from_mime_msg (msg, mime_msg, opts);
 	return NULL;
 }
 
@@ -304,13 +316,6 @@ get_disposition (GMimeObject *mobj)
 	return MU_MSG_PART_TYPE_NONE;
 }
 
-/* declaration, so we can use it in handle_encrypted_part */
-static gboolean handle_mime_object (MuMsg *msg,
-				    GMimeObject *mobj, GMimeObject *parent,
-				    MuMsgOptions opts,
-				    unsigned index, MuMsgPartForeachFunc func,
-				    gpointer user_data);
-
 #define SIG_STATUS_REPORT "sig-status-report"
 
 /* call 'func' with information about this MIME-part */
@@ -372,7 +377,7 @@ get_console_pw (const char* user_id, const char *prompt_ctx,
 static gboolean
 handle_encrypted_part (MuMsg *msg,
 		       GMimeMultipartEncrypted *part, GMimeObject *parent,
-		       MuMsgOptions opts, unsigned index,
+		       MuMsgOptions opts, unsigned *index,
 		       MuMsgPartForeachFunc func, gpointer user_data)
 {
 	GError *err;
@@ -395,7 +400,7 @@ handle_encrypted_part (MuMsg *msg,
 	if (dec) {
 		gboolean rv;
 		rv = handle_mime_object (msg, dec, parent, opts,
-					 index + 1, func, user_data);
+					 index, func, user_data);
 		g_object_unref (dec);
 		return rv;
 	}
@@ -408,7 +413,7 @@ handle_encrypted_part (MuMsg *msg,
 /* call 'func' with information about this MIME-part */
 static gboolean
 handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
-	     MuMsgOptions opts, unsigned index,
+	     MuMsgOptions opts, unsigned *index,
 	     MuMsgPartForeachFunc func, gpointer user_data)
 {
 	GMimeContentType *ct;
@@ -418,7 +423,7 @@ handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
 
 	msgpart.size        = get_part_size (part);
 	msgpart.part_type   = MU_MSG_PART_TYPE_LEAF;
-	msgpart.part_type |= get_disposition ((GMimeObject*)part);
+	msgpart.part_type  |= get_disposition ((GMimeObject*)part);
 
 	ct = g_mime_object_get_content_type ((GMimeObject*)part);
 	if (GMIME_IS_CONTENT_TYPE(ct)) {
@@ -440,7 +445,7 @@ handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
 			g_object_get_data (G_OBJECT(parent), SIG_STATUS_REPORT);
 
 	msgpart.data    = (gpointer)part;
-	msgpart.index   = index;
+	msgpart.index   = (*index)++;
 
 	func (msg, &msgpart, user_data);
 
@@ -451,7 +456,7 @@ handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
 /* call 'func' with information about this MIME-part */
 static gboolean
 handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *parent,
-		     MuMsgOptions opts, unsigned index,
+		     MuMsgOptions opts, unsigned *index,
 		     MuMsgPartForeachFunc func, gpointer user_data)
 {
 	MuMsgPart msgpart;
@@ -460,7 +465,7 @@ handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *par
 
 	msgpart.type        = "message";
 	msgpart.subtype     = "rfc822";
-	msgpart.index       = index;
+	msgpart.index       = (*index)++;
 
 	/* msgpart.size        = 0; /\* maybe calculate this? *\/ */
 
@@ -474,19 +479,41 @@ handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *par
 		GMimeMessage *mmsg; /* this may return NULL for some messages */
 		mmsg = g_mime_message_part_get_message (mimemsgpart);
 		if (mmsg)
-			return handle_children
-				(msg, mmsg,
-				 opts, index, func, user_data);
+			return handle_mime_object (msg,
+			                           mmsg->mime_part,
+			                           (GMimeObject *) mmsg,
+			                           opts,
+			                           index,
+			                           func,
+			                           user_data);
 	}
 
 	return TRUE;
+}
+
+static gboolean
+handle_multipart (MuMsg *msg, GMimeMultipart *mpart, MuMsgOptions opts,
+                  unsigned *index, MuMsgPartForeachFunc func, gpointer user_data)
+{
+	gboolean res;
+	GMimeObject *part;
+	guint i;
+
+	res = TRUE;
+	for (i = 0; i < mpart->children->len; i++) {
+		part = (GMimeObject *) mpart->children->pdata[i];
+		res &= handle_mime_object (msg, part, (GMimeObject *) mpart,
+		                           opts, index, func, user_data);
+	}
+
+	return res;
 }
 
 
 static gboolean
 handle_mime_object (MuMsg *msg,
 		    GMimeObject *mobj, GMimeObject *parent, MuMsgOptions opts,
-		    unsigned index, MuMsgPartForeachFunc func, gpointer user_data)
+		    unsigned *index, MuMsgPartForeachFunc func, gpointer user_data)
 {
 	if (GMIME_IS_PART (mobj))
 		return handle_part
@@ -497,58 +524,25 @@ handle_mime_object (MuMsg *msg,
 			(msg, GMIME_MESSAGE_PART(mobj),
 			 parent, opts, index, func, user_data);
 	else if ((opts & MU_MSG_OPTION_VERIFY) &&
-		 GMIME_IS_MULTIPART_SIGNED (mobj))
-		return check_signature
+	         GMIME_IS_MULTIPART_SIGNED (mobj)) {
+		gboolean verified, multipart;
+
+		verified = check_signature
 			(msg, GMIME_MULTIPART_SIGNED (mobj), opts);
-	else if ((opts & MU_MSG_OPTION_DECRYPT) &&
-		GMIME_IS_MULTIPART_ENCRYPTED (mobj))
+		multipart = handle_multipart
+			(msg, GMIME_MULTIPART (mobj),
+			 opts, index, func, user_data);
+
+		return verified && multipart;
+	} else if ((opts & MU_MSG_OPTION_DECRYPT) &&
+	           GMIME_IS_MULTIPART_ENCRYPTED (mobj))
 		return handle_encrypted_part
 			(msg, GMIME_MULTIPART_ENCRYPTED (mobj),
 			 parent, opts, index, func, user_data);
-	return TRUE;
-}
-
-struct _ForeachData {
-	MuMsgPartForeachFunc func;
-	gpointer             user_data;
-	MuMsg                *msg;
-	unsigned             index;
-	MuMsgOptions         opts;
-
-};
-typedef struct _ForeachData ForeachData;
-
-static void
-each_child (GMimeObject *parent, GMimeObject *part,
-	    ForeachData *fdata)
-{
-	handle_mime_object (fdata->msg,
-			    part,
-			    parent,
-			    fdata->opts,
-			    fdata->index++,
-			    fdata->func,
-			    fdata->user_data);
-}
-
-
-static gboolean
-handle_children (MuMsg *msg,
-		 GMimeMessage *mime_msg, MuMsgOptions opts,
-		 unsigned index, MuMsgPartForeachFunc func,
-		 gpointer user_data)
-{
-	ForeachData fdata;
-
- 	fdata.func	= func;
-	fdata.user_data = user_data;
-	fdata.opts	= opts;
-	fdata.msg	= msg;
-	fdata.index	= 0;
-
-	g_mime_message_foreach (mime_msg, (GMimeObjectForeachFunc)each_child,
-				&fdata);
-
+	else if (GMIME_IS_MULTIPART (mobj))
+		return handle_multipart
+			(msg, GMIME_MULTIPART (mobj),
+			 opts, index, func, user_data);
 	return TRUE;
 }
 
@@ -557,13 +551,21 @@ gboolean
 mu_msg_part_foreach (MuMsg *msg, MuMsgOptions opts,
 		     MuMsgPartForeachFunc func, gpointer user_data)
 {
+	unsigned index;
+
+	index = 0;
 	g_return_val_if_fail (msg, FALSE);
 
 	if (!mu_msg_load_msg_file (msg, NULL))
 		return FALSE;
 
-	return handle_children (msg, msg->_file->_mime_msg,
-				opts, 0, func, user_data);
+	return handle_mime_object (msg,
+	                           msg->_file->_mime_msg->mime_part,
+	                           (GMimeObject *) msg->_file->_mime_msg,
+	                           opts,
+	                           &index,
+	                           func,
+	                           user_data);
 }
 
 
@@ -660,6 +662,10 @@ save_object (GMimeObject *obj, MuMsgOptions opts, const char *fullpath,
 	else
 		rv = write_object_to_fd (obj, fd, err);
 
+	/* Unref it since it was referenced earlier by
+	 * get_mime_object_at_index */
+	g_object_unref (obj);
+
 	if (close (fd) != 0 && !err) { /* don't write on top of old err */
 		g_set_error (err, MU_ERROR_DOMAIN, MU_ERROR_FILE,
 			     "could not close '%s': %s",
@@ -693,6 +699,10 @@ mu_msg_part_get_path (MuMsg *msg, MuMsgOptions opts,
 	fname = mime_part_get_filename (mobj, index, TRUE);
 	filepath = g_build_path (G_DIR_SEPARATOR_S, targetdir ? targetdir : "",
 				 fname, NULL);
+
+	/* Unref it since it was referenced earlier by
+	 * get_mime_object_at_index */
+	g_object_unref (mobj);
 	g_free (fname);
 
 	return filepath;

@@ -2475,6 +2475,12 @@ can set it up by adding it to your configuration:
 (require 'org-mu4e)
 @end lisp
 
+this expects org-mode 8.x. If you have an older version, you can try:
+
+@lisp
+(require 'org-old-mu4e)
+@end lisp
+
 @noindent
 After this, you can use the normal @t{org-mode} mechanisms to store links:
 @kbd{M-x org-store-link} stores a link to a particular message when you're
@@ -2491,8 +2497,8 @@ org-open-at-point} elsewhere - both typically bound to @kbd{C-c C-o}.
 
 Some earlier versions of @t{mu4e} had support for editing e-mail
 messages using @t{org-mode}; since this never worked very well, this has
-now been deprecated; it might be replaced in some future version with
-something better.
+now been deprecated; it might be replaced with something better in some
+future version .
 
 @subsection Some caveats
 
@@ -3055,6 +3061,13 @@ manual} becomes @t{/&MH4wijCCMEgwSg-}). How can display such folders
 correctly?} This is best solved by telling @command{offlineimap} to use UTF-8
 instead -- see
 @url{https://github.com/djcb/mu/issues/68#issuecomment-8598652}.
+@item @emph{How can I customize the function to select a folder?} 
+The @t{mu4e-completing-read} variable can be customized to select a
+folder in any way. The variable can be set to a function that receives
+five arguments, following @t{completing-read}. The default value is
+@t{ido-completing-read}; to use emacs's default behaviour, set the
+variable to @t{completing-read}. Helm users can use the same value, and
+by enabling @t{helm-mode} use helm-style completion.
 @end enumerate
 
 @node Reading messages
@@ -3254,6 +3267,7 @@ value)} pairs:
      (user-mail-address "my.address@@account1.tld")
      (smtpmail-default-smtp-server "smtp.account1.tld")
      (smtpmail-local-domain "account1.tld")
+     (smtpmail-smtp-user "username1")
      (smtpmail-smtp-server "smtp.account1.tld")
      (smtpmail-stream-type starttls)
      (smtpmail-smtp-service 25))
@@ -3263,16 +3277,23 @@ value)} pairs:
      (user-mail-address "my.address@@account2.tld")
      (smtpmail-default-smtp-server "smtp.account2.tld")
      (smtpmail-local-domain "account2.tld")
+     (smtpmail-smtp-user "username2")
      (smtpmail-smtp-server "smtp.account2.tld")
      (smtpmail-stream-type starttls)
      (smtpmail-smtp-service 587))))
 @end lisp
 
-You can put any variables you want in the account lists, just make sure
+You can put any variable you want in the account lists, just make sure
 that you put in @emph{all} the variables that differ for each account.
-Variables that do not differ do not be included. For example, if you use
-the same smtp server for both accounts, you don't need to include the
-smtp-related variables in @code{my-mu4e-account-alist}.
+Variables that do not differ need not be included. For example, if you
+use the same smtp server for both accounts, you don't need to include
+the smtp-related variables in @code{my-mu4e-account-alist}.
+
+Note that some SMTP servers (such as Gmail) require the SMTP username to
+match the user mail address. In this case your mail will appear to
+originate from whichever SMTP account you use. Thus unless you are
+certain your SMTP server does not have this requirement, you should
+generally use different SMTP account credentials for each mail account.
 
 Now, the following function can be used to select an account and set the
 variables in @code{my-mu4e-account-alist} to the correct values:
