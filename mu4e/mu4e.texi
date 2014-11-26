@@ -922,13 +922,26 @@ takes a message-plist as its argument (@ref{Message functions}).
 	    (length (mu4e-message-field msg :cc))))))))
 @end lisp
 
-You can now add this custom header to your @code{mu4e-headers-fields} just
-like the built-in headers. After evaluating, you headers-view should now
-include a new header @t{Recip#} with the number of recipients.
+Or, let's get the full mailing-list name:
+@lisp
+(add-to-list 'mu4e-header-info-custom
+  '(:full-mailing-list .
+     ( :name "Mailing-list"               ;; long name, as seen in the message-view
+       :shortname "ML"                    ;; short name, as seen in the headers view
+       :help "Full name for mailing list" ;; tooltip
+       :function
+       (lambda (msg)
+	 (or (mu4e-message-field msg :mailing-list) "")))))
+@end lisp
 
-Note that this function can be used in both the headers-view and the
-message-view; if you need something specific for one of these, you can check
-for the mode in your function.
+You can then add the custom header to your @code{mu4e-headers-fields},
+just like the built-in headers. After evaluation, you headers-view
+should include a new header @t{Recip#} with the number of recipients,
+and/or @t{ML} with the full mailing-list name.
+
+This function can be used in both the headers-view and the message-view;
+if you need something specific for one of these, you can check for the
+mode in your function, or create separate functions.
 
 @node HV Actions
 @section Actions
@@ -1229,7 +1242,7 @@ installing that, you can tell @t{mu4e} to use it with something like:
    "html2markdown | grep -v '&nbsp_place_holder;'")
 @end lisp
 
-On MacOS, there is a program called @t{textutil} as yet another alternative:
+OS X, there is a program called @t{textutil} as yet another alternative:
 
 @lisp
 (setq mu4e-html2text-command
@@ -1253,6 +1266,15 @@ this, add the following to your configuration:
 (setq mu4e-html2text-command 'mu4e-shr2text)
 @end lisp
 
+If you use the @code{mu4e-shr2text}, it might be useful to emulate some
+of the @t{shr} key bindings, with something like:
+@lisp
+(add-hook 'mu4e-view-mode-hook
+  (lambda()
+     ;; try to emulate some of the eww key-bindings
+    (local-set-key (kbd "<tab>") 'shr-next-link)
+    (local-set-key (kbd "<backtab>") 'shr-previous-link)))
+@end lisp
 
 @node MSGV Crypto
 @section Crypto
@@ -1602,6 +1624,12 @@ see @ref{Setting the default emacs mail program}.
 @item Normally, @t{mu4e} @emph{buries} the message buffer after sending; if you want
 to kill the buffer instead, add something like the following to your
 configuration:
+@item If you want to exclude your own e-mail address when ``replying to
+all'', set @code{mu4e-compose-dont-reply-to-self} to @code{t}.  In order
+for this to work properly you need to properly set the
+@code{user-mail-address} variable or in the case you use multiple e-mail
+addresses you need to set the @code{mu4e-user-mail-address-list}
+variable accordingly.
 @lisp
 (setq message-kill-buffer-on-exit t)
 @end lisp
@@ -2053,10 +2081,10 @@ than @emph{n} recipients -- we could do this with the following recipe:
         (read-number "Match messages with more recipients than: "))) t)
 @end lisp
 
-After evaluating this expression, you can use it by pressing @key{&} in the
-headers buffer to select a custom marker function, and then @key{M} to choose
-this particular one (@t{M} because it is the first character of the
-description).
+After evaluating this expression, you can use it by pressing @key{&} in
+the headers buffer to select a custom marker function, and then @key{M}
+to choose this particular one (@t{M} because it is the first character
+of the description).
 
 As you can see, it's not very hard to define simple functions to match
 messages. There are more examples in the defaults for
@@ -2358,11 +2386,13 @@ action}
 @end itemize
 
 @noindent
-You can also write your own functions without using the above. If you want to
-do so, key useful functions are @code{mu4e-message-at-point} (see below),
-@code{mu4e-headers-for-each} (to iterate over all headers, see its docstring)
-and @code{mu4e-view-for-each-part} (to iterate over all parts/attachments, see
-its docstring).
+You can also write your own functions without using the above. If you
+want to do so, key useful functions are @code{mu4e-message-at-point}
+(see below), @code{mu4e-headers-for-each} (to iterate over all headers,
+see its docstring) and @code{mu4e-view-for-each-part} (to iterate over
+all parts/attachments, see its docstring). Another useful function is
+@code{mu4e-headers-find-if}, which searches for a message matching a
+certain pattern; again, see its docstring.
 
 @node Available functions
 @section Available functions
