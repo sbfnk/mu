@@ -348,7 +348,7 @@ add text-properties to VAL."
   (interactive)
   (unless (get-text-property (or point (point)) 'email)
     (mu4e-error "No address at point"))
-  (mu4e~compose-mail (get-text-property (or point (point)) 'email)))
+  (mu4e~compose-mail (get-text-property (or point (point)) 'long)))
 
 (defun mu4e~view-copy-contact (&optional full)
   "Compose a message for the address at (point)."
@@ -918,9 +918,9 @@ message view. If this succeeds, return the new docid. Otherwise,
 return nil."
   (interactive "P")
   (mu4e~view-in-headers-context 
-    (mu4e-headers-next-unread backwards)))
-;; NOTE perhaps nice to have it also _select_ the found message;
-;; but it seems emacs gets a bit confused when we try that.
+    (mu4e-headers-next-unread backwards))
+  (mu4e-select-other-view)
+  (mu4e-headers-view-message))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
