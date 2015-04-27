@@ -586,7 +586,9 @@ process_str (const char *str, gboolean xapian_esc, gboolean query_esc)
 		if (g_unichar_ismark(uc))
 			continue;
 
-		uc = g_unichar_tolower (uc);
+		if (!is_range_field)
+			uc = g_unichar_tolower (uc);
+		
 		g_string_append_unichar (gstr, uc);
 	}
 
@@ -886,7 +888,7 @@ mu_str_convert_to_utf8 (const char* buffer, const char *charset)
 
 	if (!utf8) {
 		g_warning ("%s: conversion failed from %s: %s",
-			 __FUNCTION__, charset, err ? err->message : "");
+			 __func__, charset, err ? err->message : "");
 	}
 
 	g_clear_error (&err);

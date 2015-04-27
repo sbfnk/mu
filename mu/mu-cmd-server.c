@@ -134,7 +134,7 @@ print_expr (const char* frm, ...)
 		rv = write (outfd, "\n", 1);
 	if (rv == -1) {
 		g_critical ("%s: write() failed: %s",
-			   __FUNCTION__, strerror(errno));
+			   __func__, strerror(errno));
 		/* terminate ourselves */
 		raise (SIGTERM);
 	}
@@ -258,7 +258,7 @@ get_docid_from_msgid (MuQuery *query, const char *str, GError **err)
 	unsigned docid;
 	MuMsgIter *iter;
 
-	querystr = g_strdup_printf ("msgid:%s", str);
+	querystr = g_strdup_printf ("msgid:\"%s\"", str);
 	iter = mu_query_run (query, querystr,
 			     MU_MSG_FIELD_ID_NONE,
 			     1, MU_QUERY_FLAG_NONE, err);
@@ -293,7 +293,7 @@ get_docids_from_msgids (MuQuery *query, const char *str, GError **err)
 	MuMsgIter *iter;
 	GSList *lst;
 
-	querystr = g_strdup_printf ("msgid:%s", str);
+	querystr = g_strdup_printf ("msgid:\"%s\"", str);
 	iter = mu_query_run (query, querystr, MU_MSG_FIELD_ID_NONE,
 			     -1 /*unlimited*/, MU_QUERY_FLAG_NONE,
 			     err);
@@ -976,14 +976,12 @@ cmd_find (ServerContext *ctx, GHashTable *args, GError **err)
 static MuError
 cmd_guile (ServerContext *ctx, GHashTable *args, GError **err)
 {
-	const char *script, *file;
+	const char *eval;
 
-	script = get_string_from_args (args, "script", TRUE, NULL);
-	file   = get_string_from_args (args, "file", TRUE, NULL);
-
-	if (!script == !file) {
-		print_error (MU_ERROR_IN_PARAMETERS,
-			     "guile: must provide one of 'script', 'file'");
+	eval = get_string_from_args (args, "eval", TRUE, NULL);
+	
+	if (!eval) {
+		print_error (MU_ERROR_IN_PARAMETERS, "guile: expected: 'eval'");
 		return MU_OK;
 	}
 

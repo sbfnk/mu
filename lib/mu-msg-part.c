@@ -1,6 +1,6 @@
 /* -*-mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-*/
 /*
-** Copyright (C) 2008-2013 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
+** Copyright (C) 2008-2014 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -153,11 +153,10 @@ accumulate_text (MuMsg *msg, MuMsgPart *part, GString **gstrp)
 }
 
 /* declaration, so we can use it earlier */
-static gboolean handle_mime_object (MuMsg *msg,
-				    GMimeObject *mobj, GMimeObject *parent,
-				    MuMsgOptions opts,
-				    unsigned *index, MuMsgPartForeachFunc func,
-				    gpointer user_data);
+static gboolean
+handle_mime_object (MuMsg *msg, GMimeObject *mobj, GMimeObject *parent,
+                    MuMsgOptions opts, unsigned *index, gboolean decrypted,
+                    MuMsgPartForeachFunc func, gpointer user_data);
 
 static char*
 get_text_from_mime_msg (MuMsg *msg, GMimeMessage *mmsg, MuMsgOptions opts)
@@ -165,13 +164,14 @@ get_text_from_mime_msg (MuMsg *msg, GMimeMessage *mmsg, MuMsgOptions opts)
 	GString *gstr;
 	unsigned index;
 
-	index = 0;
+	index = 1;
 	gstr  = g_string_sized_new (4096);
 	handle_mime_object (msg,
 	                    mmsg->mime_part,
 			    (GMimeObject *) mmsg,
 			    opts,
 			    &index,
+	                    FALSE,
 			    (MuMsgPartForeachFunc)accumulate_text,
 			    &gstr);
 
@@ -316,30 +316,18 @@ get_disposition (GMimeObject *mobj)
 	return MU_MSG_PART_TYPE_NONE;
 }
 
-#define SIG_STATUS_REPORT "sig-status-report"
-
 /* call 'func' with information about this MIME-part */
-static gboolean
+static inline void
 check_signature (MuMsg *msg, GMimeMultipartSigned *part, MuMsgOptions opts)
 {
-	/* the signature status */
-	MuMsgPartSigStatusReport *sigrep;
 	GError *err;
 
-	err     = NULL;
-	sigrep = mu_msg_crypto_verify_part (part, opts, &err);
+	err = NULL;
+	mu_msg_crypto_verify_part (part, opts, &err);
 	if (err) {
 		g_warning ("error verifying signature: %s", err->message);
 		g_clear_error (&err);
 	}
-
-	/* tag this part with the signature status check */
-	g_object_set_data_full
-		(G_OBJECT(part), SIG_STATUS_REPORT,
-		 sigrep,
-		 (GDestroyNotify)mu_msg_part_sig_status_report_destroy);
-
-	return TRUE;
 }
 
 
@@ -375,12 +363,12 @@ get_console_pw (const char* user_id, const char *prompt_ctx,
 
 
 static gboolean
-handle_encrypted_part (MuMsg *msg,
-		       GMimeMultipartEncrypted *part, GMimeObject *parent,
+handle_encrypted_part (MuMsg *msg, GMimeMultipartEncrypted *part,
 		       MuMsgOptions opts, unsigned *index,
 		       MuMsgPartForeachFunc func, gpointer user_data)
 {
 	GError *err;
+	gboolean rv;
 	GMimeObject *dec;
 	MuMsgPartPasswordFunc pw_func;
 
@@ -398,14 +386,25 @@ handle_encrypted_part (MuMsg *msg,
 	}
 
 	if (dec) {
-		gboolean rv;
-		rv = handle_mime_object (msg, dec, parent, opts,
-					 index, func, user_data);
+		rv = handle_mime_object (msg, dec, (GMimeObject *) part,
+		                         opts, index, TRUE, func, user_data);
 		g_object_unref (dec);
-		return rv;
+	} else {
+		/* On failure to decrypt, list the encrypted part as
+		 * an attachment
+		 */
+		GMimeObject *encrypted;
+
+		encrypted = g_mime_multipart_get_part (
+			GMIME_MULTIPART (part), 1);
+
+		g_return_val_if_fail (GMIME_IS_PART(encrypted), FALSE);
+
+		rv = handle_mime_object (msg, encrypted, (GMimeObject *) part,
+		                         opts, index, FALSE, func, user_data);
 	}
 
-	return TRUE;
+	return rv;
 }
 
 
@@ -413,7 +412,7 @@ handle_encrypted_part (MuMsg *msg,
 /* call 'func' with information about this MIME-part */
 static gboolean
 handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
-	     MuMsgOptions opts, unsigned *index,
+	     MuMsgOptions opts, unsigned *index, gboolean decrypted,
 	     MuMsgPartForeachFunc func, gpointer user_data)
 {
 	GMimeContentType *ct;
@@ -424,6 +423,12 @@ handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
 	msgpart.size        = get_part_size (part);
 	msgpart.part_type   = MU_MSG_PART_TYPE_LEAF;
 	msgpart.part_type  |= get_disposition ((GMimeObject*)part);
+	if (decrypted)
+		msgpart.part_type |= MU_MSG_PART_TYPE_DECRYPTED;
+	else if ((opts & MU_MSG_OPTION_DECRYPT) &&
+	         GMIME_IS_MULTIPART_ENCRYPTED (parent))
+		msgpart.part_type |= MU_MSG_PART_TYPE_ENCRYPTED;
+
 
 	ct = g_mime_object_get_content_type ((GMimeObject*)part);
 	if (GMIME_IS_CONTENT_TYPE(ct)) {
@@ -437,12 +442,19 @@ handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
 			msgpart.part_type |= MU_MSG_PART_TYPE_TEXT_HTML;
 	}
 
-	/* put the verification info in the pgp-signature part */
+	/* put the verification info in the pgp-signature and every
+	 * descendent of a pgp-encrypted part */
 	msgpart.sig_status_report = NULL;
-	if (g_ascii_strcasecmp (msgpart.subtype, "pgp-signature") == 0)
+	if (g_ascii_strcasecmp (msgpart.subtype, "pgp-signature") == 0 ||
+	    decrypted) {
 		msgpart.sig_status_report =
 			(MuMsgPartSigStatusReport*)
-			g_object_get_data (G_OBJECT(parent), SIG_STATUS_REPORT);
+			g_object_get_data (G_OBJECT(parent),
+					   SIG_STATUS_REPORT);
+
+		if (msgpart.sig_status_report)
+			msgpart.part_type |= MU_MSG_PART_TYPE_SIGNED;
+	}
 
 	msgpart.data    = (gpointer)part;
 	msgpart.index   = (*index)++;
@@ -455,8 +467,9 @@ handle_part (MuMsg *msg, GMimePart *part, GMimeObject *parent,
 
 /* call 'func' with information about this MIME-part */
 static gboolean
-handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *parent,
-		     MuMsgOptions opts, unsigned *index,
+handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart,
+		     GMimeObject *parent, MuMsgOptions opts, unsigned *index,
+		     gboolean decrypted,
 		     MuMsgPartForeachFunc func, gpointer user_data)
 {
 	MuMsgPart msgpart;
@@ -476,14 +489,16 @@ handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *par
 	func (msg, &msgpart, user_data);
 
 	if (opts & MU_MSG_OPTION_RECURSE_RFC822) {
-		GMimeMessage *mmsg; /* this may return NULL for some messages */
+		GMimeMessage *mmsg; /* may return NULL for some
+				     * messages */
 		mmsg = g_mime_message_part_get_message (mimemsgpart);
 		if (mmsg)
 			return handle_mime_object (msg,
 			                           mmsg->mime_part,
-			                           (GMimeObject *) mmsg,
+			                           parent,
 			                           opts,
 			                           index,
+			                           decrypted,
 			                           func,
 			                           user_data);
 	}
@@ -492,8 +507,9 @@ handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *par
 }
 
 static gboolean
-handle_multipart (MuMsg *msg, GMimeMultipart *mpart, MuMsgOptions opts,
-                  unsigned *index, MuMsgPartForeachFunc func, gpointer user_data)
+handle_multipart (MuMsg *msg, GMimeMultipart *mpart, GMimeObject *parent,
+                  MuMsgOptions opts, unsigned *index, gboolean decrypted,
+		  MuMsgPartForeachFunc func, gpointer user_data)
 {
 	gboolean res;
 	GMimeObject *part;
@@ -502,8 +518,9 @@ handle_multipart (MuMsg *msg, GMimeMultipart *mpart, MuMsgOptions opts,
 	res = TRUE;
 	for (i = 0; i < mpart->children->len; i++) {
 		part = (GMimeObject *) mpart->children->pdata[i];
-		res &= handle_mime_object (msg, part, (GMimeObject *) mpart,
-		                           opts, index, func, user_data);
+		res &= handle_mime_object (msg, part, parent,
+		                           opts, index, decrypted,
+		                           func, user_data);
 	}
 
 	return res;
@@ -511,38 +528,34 @@ handle_multipart (MuMsg *msg, GMimeMultipart *mpart, MuMsgOptions opts,
 
 
 static gboolean
-handle_mime_object (MuMsg *msg,
-		    GMimeObject *mobj, GMimeObject *parent, MuMsgOptions opts,
-		    unsigned *index, MuMsgPartForeachFunc func, gpointer user_data)
+handle_mime_object (MuMsg *msg, GMimeObject *mobj, GMimeObject *parent,
+		    MuMsgOptions opts, unsigned *index, gboolean decrypted,
+		    MuMsgPartForeachFunc func, gpointer user_data)
 {
 	if (GMIME_IS_PART (mobj))
 		return handle_part
 			(msg, GMIME_PART(mobj), parent,
-			 opts, index, func, user_data);
+			 opts, index, decrypted, func, user_data);
 	else if (GMIME_IS_MESSAGE_PART (mobj))
 		return handle_message_part
 			(msg, GMIME_MESSAGE_PART(mobj),
-			 parent, opts, index, func, user_data);
+			 parent, opts, index, decrypted, func, user_data);
 	else if ((opts & MU_MSG_OPTION_VERIFY) &&
 	         GMIME_IS_MULTIPART_SIGNED (mobj)) {
-		gboolean verified, multipart;
-
-		verified = check_signature
+		check_signature
 			(msg, GMIME_MULTIPART_SIGNED (mobj), opts);
-		multipart = handle_multipart
-			(msg, GMIME_MULTIPART (mobj),
-			 opts, index, func, user_data);
-
-		return verified && multipart;
+		return handle_multipart
+			(msg, GMIME_MULTIPART (mobj), mobj, opts,
+			 index, decrypted, func, user_data);
 	} else if ((opts & MU_MSG_OPTION_DECRYPT) &&
 	           GMIME_IS_MULTIPART_ENCRYPTED (mobj))
 		return handle_encrypted_part
 			(msg, GMIME_MULTIPART_ENCRYPTED (mobj),
-			 parent, opts, index, func, user_data);
+			 opts, index, func, user_data);
 	else if (GMIME_IS_MULTIPART (mobj))
 		return handle_multipart
-			(msg, GMIME_MULTIPART (mobj),
-			 opts, index, func, user_data);
+			(msg, GMIME_MULTIPART (mobj), parent, opts,
+			 index, decrypted, func, user_data);
 	return TRUE;
 }
 
@@ -553,7 +566,7 @@ mu_msg_part_foreach (MuMsg *msg, MuMsgOptions opts,
 {
 	unsigned index;
 
-	index = 0;
+	index = 1;
 	g_return_val_if_fail (msg, FALSE);
 
 	if (!mu_msg_load_msg_file (msg, NULL))
@@ -564,6 +577,7 @@ mu_msg_part_foreach (MuMsg *msg, MuMsgOptions opts,
 	                           (GMimeObject *) msg->_file->_mime_msg,
 	                           opts,
 	                           &index,
+	                           FALSE,
 	                           func,
 	                           user_data);
 }
@@ -780,7 +794,8 @@ mu_msg_part_save (MuMsg *msg, MuMsgOptions opts,
 
 
 gchar*
-mu_msg_part_save_temp (MuMsg *msg, MuMsgOptions opts, guint partidx, GError **err)
+mu_msg_part_save_temp (MuMsg *msg, MuMsgOptions opts, guint partidx,
+		       GError **err)
 {
 	gchar *filepath;
 
@@ -807,7 +822,8 @@ match_cid (MuMsgPart *mpart, const char *cid)
 }
 
 int
-mu_msg_find_index_for_cid (MuMsg *msg, MuMsgOptions opts, const char *sought_cid)
+mu_msg_find_index_for_cid (MuMsg *msg, MuMsgOptions opts,
+			   const char *sought_cid)
 {
 	const char* cid;
 
