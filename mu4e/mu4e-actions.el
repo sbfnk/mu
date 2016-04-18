@@ -1,6 +1,6 @@
 ;;; mu4e-actions.el -- part of mu4e, the mu mail user agent
 ;;
-;; Copyright (C) 2011-2012 Dirk-Jan C. Binnema
+;; Copyright (C) 2011-2016 Dirk-Jan C. Binnema
 
 ;; Author: Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
 ;; Maintainer: Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
@@ -30,6 +30,7 @@
 (require 'cl)
 (require 'ido)
 
+(require 'mu4e-utils)
 (require 'mu4e-message)
 (require 'mu4e-meta)
 
@@ -43,7 +44,6 @@ Works for headers view and message-view."
     (shell-command-to-string
       (concat "wc -l < " (shell-quote-argument (mu4e-message-field msg :path))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 
 
 
@@ -68,33 +68,46 @@ Works for the message view."
       (mu4e-warn "Failed to create PDF file"))
     (find-file pdf)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun mu4e-action-view-in-browser (msg)
-  "View the body of the message in a web browser.
-You can influence the browser to use with the variable
-`browse-url-generic-program'."
+ 
+(defun mu4e~write-body-to-html (msg)
+  "Write the body (either html or text) to a temporary file;
+return the filename."
   (let* ((html (mu4e-message-field msg :body-html))
 	  (txt (mu4e-message-field msg :body-txt))
-	  (tmpfile (format "%s%x.html" temporary-file-directory (random t))))
+	  (tmpfile (mu4e-make-temp-file "html")))
     (unless (or html txt)
       (mu4e-error "No body part for this message"))
     (with-temp-buffer
-      ;; simplistic -- but note that it's only an example...
+      (insert "<head><meta charset=\"UTF-8\"></head>\n")
       (insert (or html (concat "<pre>" txt "</pre>")))
       (write-file tmpfile)
-      (browse-url (concat "file://" tmpfile)))))
+      tmpfile)))
+
+(defun mu4e-action-view-in-browser (msg)
+  "View the body of the message in a browser.
+You can influence the browser to use with the variable
+`browse-url-generic-program', and see the discussion of privacy
+aspects in `(mu4e) Displaying rich-text messages'."
+  (browse-url (concat "file://"
+		(mu4e~write-body-to-html msg)))) 
+
+(defun mu4e-action-view-with-xwidget (msg)
+  "View the body of the message inside xwidget-webkit. This is
+only available in emacs 25+; also see the discussion of privacy
+aspects in `(mu4e) Displaying rich-text messages'."
+  (unless (fboundp 'xwidget-webkit-browse-url)
+    (mu4e-error "No xwidget support available"))
+  (xwidget-webkit-browse-url
+    (concat "file://" (mu4e~write-body-to-html msg)) t)) 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 
   
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  (defconst mu4e-text2speech-command "festival --tts"
-    "Program that speaks out text it receives on standard-input.")
+(defconst mu4e-text2speech-command "festival --tts"
+  "Program that speaks out text it receives on standard-input.")
 
 (defun mu4e-action-message-to-speech (msg)
   "Pronounce the message text using `mu4e-text2speech-command'."
@@ -148,9 +161,9 @@ store your org-contacts."
 	  (blurb
 	    (format
 	      (concat
-		"* %s%%?\n"
+		"* %%?%s\n"
 		":PROPERTIES:\n"
-		":EMAIL:%s\n"
+		":EMAIL: %s\n"
 		":NICK:\n"
 		":BIRTHDAY:\n"
 		":END:\n\n")
@@ -234,7 +247,7 @@ store your org-contacts."
 	  (maildir (mu4e-message-field msg :maildir))
 	  (oldtags (mu4e-message-field msg :tags))
 	  (header  mu4e-action-tags-header)
-	  (sep     (cond ((string= header "Keywords") " ")
+	  (sep     (cond ((string= header "Keywords") ", ")
 		     ((string= header "X-Label") " ")
 		     ((string= header "X-Keywords") ", ")
 		     (t ", ")))
@@ -268,6 +281,16 @@ store your org-contacts."
 
     (mu4e-message (concat "tagging: " (mapconcat 'identity taglist ", ")))
     (mu4e-refresh-message path maildir)))
+
+(defun mu4e-action-show-thread (msg)
+  "Show all messages that are in the same thread as the message
+at point."
+  (let ((msgid (mu4e-message-field msg :message-id)))
+    (when msgid
+      (let ((mu4e-headers-show-threads t)
+	     (mu4e-headers-include-related t))
+        (mu4e-headers-search
+         (format "msgid:%s" msgid))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 

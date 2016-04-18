@@ -37,7 +37,9 @@
 #include "mu-util.h"
 
 #define	MU_LAST_USED_MAILDIR_KEY "last_used_maildir"
-#define MU_INDEX_MAX_FILE_SIZE (50*1000*1000) /* 50 Mb */
+#define MU_INDEX_MAX_FILE_SIZE (500*1000*1000) /* 500 Mb */
+/* apparently, people are getting really big mails, so let us index those (by
+ * default)*/
 
 struct _MuIndex {
 	MuStore		*_store;
@@ -300,7 +302,7 @@ mu_index_set_max_msg_size (MuIndex *index, guint max_size)
 	g_return_if_fail (index);
 
 	if (max_size == 0)
-		index->_max_filesize = 	MU_INDEX_MAX_FILE_SIZE;
+		index->_max_filesize = MU_INDEX_MAX_FILE_SIZE;
 	else
 		index->_max_filesize = max_size;
 }
@@ -388,8 +390,8 @@ mu_index_stats (MuIndex *index, const char *path,
 	if (stats)
 		memset (stats, 0, sizeof(MuIndexStats));
 
-	cb_data._idx_msg_cb        = cb_msg;
-	cb_data._idx_dir_cb        = cb_dir;
+	cb_data._idx_msg_cb = cb_msg;
+	cb_data._idx_dir_cb = cb_dir;
 
 	cb_data._stats     = stats;
 	cb_data._user_data = user_data;

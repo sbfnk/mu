@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2011-2013 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
+** Copyright (C) 2011-2016 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -353,8 +353,8 @@ get_part_type_string (MuMsgPartType ptype)
 static void
 each_part (MuMsg *msg, MuMsgPart *part, PartInfo *pinfo)
 {
-	char *name, *tmp, *parttype;
-	char *tmpfile;
+	char	*name, *tmp, *parttype;
+	char	*tmpfile;
 
 	name     = mu_msg_part_get_filename (part, TRUE);
 	tmpfile  = get_temp_file_maybe (msg, part, pinfo->opts);
@@ -366,7 +366,7 @@ each_part (MuMsg *msg, MuMsgPart *part, PartInfo *pinfo)
 		 ":attachment %s :size %i %s %s)",
 		 pinfo->parts ? pinfo->parts: "",
 		 part->index,
-		 name ? name : "noname",
+		 name ? mu_str_escape_c_literal(name, FALSE) : "noname",
 		 part->type ? part->type : "application",
 		 part->subtype ? part->subtype : "octet-stream",
 		 tmpfile ? " :temp" : "", tmpfile ? tmpfile : "",
@@ -415,11 +415,12 @@ append_sexp_thread_info (GString *gstr, const MuMsgIterThreadInfo *ti)
 		 " :has-child t" : "");
 }
 
-
 static void
 append_message_file_parts (GString *gstr, MuMsg *msg, MuMsgOptions opts)
 {
-	GError *err;
+	const char	*str;
+	GError		*err;
+
 	err = NULL;
 
 	if (!mu_msg_load_msg_file (msg, &err)) {
@@ -432,10 +433,11 @@ append_message_file_parts (GString *gstr, MuMsg *msg, MuMsgOptions opts)
 	append_sexp_parts (gstr, msg, opts);
 	append_sexp_contacts (gstr, msg);
 
-	append_sexp_attr_list (gstr, "references",
-			       mu_msg_get_references (msg));
-	append_sexp_attr (gstr, "in-reply-to",
-			  mu_msg_get_header (msg, "In-Reply-To"));
+	/* add the user-agent / x-mailer */
+	str = mu_msg_get_header (msg, "User-Agent");
+	if (str || (str = mu_msg_get_header (msg, "X-Mailer")))
+		append_sexp_attr (gstr, "user-agent", str);
+
 	append_sexp_body_attr (gstr, "body-txt",
 			  mu_msg_get_body_text(msg, opts));
 	append_sexp_body_attr (gstr, "body-html",
@@ -530,6 +532,11 @@ mu_msg_to_sexp (MuMsg *msg, unsigned docid, const MuMsgIterThreadInfo *ti,
 				mu_msg_prio_name(mu_msg_get_prio(msg)));
 	append_sexp_flags (gstr, msg);
 	append_sexp_tags  (gstr, msg);
+
+	append_sexp_attr_list (gstr, "references",
+			       mu_msg_get_references (msg));
+	append_sexp_attr (gstr, "in-reply-to",
+			  mu_msg_get_header (msg, "In-Reply-To"));
 
 	/* headers are retrieved from the database, views from the
 	 * message file file attr things can only be gotten from the

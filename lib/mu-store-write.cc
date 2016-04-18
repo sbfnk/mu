@@ -1,6 +1,6 @@
 /* -*-mode: c++; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8-*- */
 /*
-** Copyright (C) 2008-2013 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
+** Copyright (C) 2008-2016 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -44,7 +44,7 @@ _MuStore::begin_transaction ()
 {
 	try {
 		db_writable()->begin_transaction();
-			in_transaction (true);
+		in_transaction (true);
 	} MU_XAPIAN_CATCH_BLOCK;
 }
 
@@ -195,8 +195,11 @@ mu_store_flush (MuStore *store)
 		if (store->in_transaction())
 			store->commit_transaction ();
 		store->db_writable()->commit ();
-
+		
 	} MU_XAPIAN_CATCH_BLOCK;
+
+	if (store->contacts())
+		mu_contacts_serialize (store->contacts());
 }
 
 
@@ -302,7 +305,6 @@ add_terms_values_number (Xapian::Document& doc, MuMsg *msg, MuMsgFieldId mfid)
 		doc.add_term (prio_val((MuMsgPrio)num));
 }
 
-/* for string and string-list */
 static void
 add_terms_values_msgid (Xapian::Document& doc, MuMsg *msg)
 {
@@ -371,8 +373,8 @@ add_terms_values_string (Xapian::Document& doc, MuMsg *msg, MuMsgFieldId mfid)
 
 
 static void
-add_terms_values_string_list  (Xapian::Document& doc, MuMsg *msg,
-			       MuMsgFieldId mfid)
+add_terms_values_string_list (Xapian::Document& doc, MuMsg *msg,
+			      MuMsgFieldId mfid)
 {
 	const GSList *lst;
 
@@ -389,7 +391,7 @@ add_terms_values_string_list  (Xapian::Document& doc, MuMsg *msg,
 	}
 
 	if (mu_msg_field_xapian_term (mfid)) {
-		for  (; lst; lst = g_slist_next ((GSList*)lst))
+		for (; lst; lst = g_slist_next ((GSList*)lst))
 			add_terms_values_str (doc, (const gchar*)lst->data,
 					      mfid);
 	}
@@ -516,7 +518,7 @@ typedef struct _MsgDoc		 MsgDoc;
 
 
 static void
-add_terms_values_default  (MuMsgFieldId mfid, MsgDoc *msgdoc)
+add_terms_values_default (MuMsgFieldId mfid, MsgDoc *msgdoc)
 {
 	if (mu_msg_field_is_numeric (mfid))
 		add_terms_values_number
@@ -647,7 +649,7 @@ each_contact_info (MuMsgContact *contact, MsgDoc *msgdoc)
 		char *flat;
 		flat = mu_str_process_term (contact->address);
 		msgdoc->_doc->add_term
-			(std::string  (pfx + flat, 0, MuStore::MAX_TERM_LENGTH));
+			(std::string (pfx + flat, 0, MuStore::MAX_TERM_LENGTH));
 		g_free (flat);
 		add_address_subfields (*msgdoc->_doc, contact->address, pfx);
 
@@ -670,9 +672,11 @@ each_contact_check_if_personal (MuMsgContact *contact, MsgDoc *msgdoc)
 		return;
 
 	for (cur = msgdoc->_my_addresses; cur; cur = g_slist_next (cur)) {
-		if (g_ascii_strcasecmp (contact->address,
-					(const char*)cur->data) == 0)
+		if (g_ascii_strcasecmp (
+			    contact->address, (const char*)cur->data) == 0) {
 			msgdoc->_personal = TRUE;
+			break;
+		}
 	}
 }
 

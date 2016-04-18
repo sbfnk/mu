@@ -1,6 +1,6 @@
 ;;; mu4e-message.el -- part of mu4e, the mu mail user agent
 ;;
-;; Copyright (C) 2012 Dirk-Jan C. Binnema
+;; Copyright (C) 2012-2016 Dirk-Jan C. Binnema
 
 ;; Author: Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
 ;; Maintainer: Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
@@ -34,22 +34,26 @@
 (require 'html2text)
 
 
-(defcustom mu4e-html2text-command 'html2text
+(defcustom mu4e-html2text-command
+  (if (fboundp 'shr-insert-document) 'mu4e-shr2text 'html2text)
+  
   "Either a shell command or a function that converts from html to plain text.
 
 If it is a shell-command, the command reads html from standard
 input and outputs plain text on standard output. If you use the
-htmltext program, it's recommended you use \"html2text -utf8 -width
-72\". Alternatives are the python-based html2markdown, w3m and on
-MacOS you may want to use textutil.
+htmltext program, it's recommended you use \"html2text -utf8
+-width 72\". Alternatives are the python-based html2markdown, w3m
+and on MacOS you may want to use textutil.
 
 It can also be a function, which takes the current buffer in html
 as input, and transforms it into html (like the `html2text'
 function).
 
-In both cases, the output is expected to be in utf-8 encoding.
+In both cases, the output is expected to be in UTF-8 encoding.
 
-The default is emacs' built-in `html2text' function."
+Newer emacs has the shr renderer, and when its available,
+conversion defaults `mu4e-shr2text'; otherwise, the default is
+emacs' built-in `html2text' function."
   :type '(choice string function)
   :group 'mu4e-view)
 
@@ -60,7 +64,7 @@ is always used."
   :type 'boolean
   :group 'mu4e-view)
 
-(defcustom mu4e-view-html-plaintext-ratio-heuristic 10
+(defcustom mu4e-view-html-plaintext-ratio-heuristic 5
   "Ratio between the length of the html and the plain text part
 below which mu4e will consider the plain text part to be 'This
 messages requires html' text bodies."
@@ -177,12 +181,12 @@ be changed by setting `mu4e-view-prefer-html'."
 		(with-temp-buffer
 		  (insert html)
 		  (cond
-                   ((stringp mu4e-html2text-command)
-                    (let* ((tmp-file (make-temp-file "mu4e-html")))
-                     (write-region (point-min) (point-max) tmp-file)
-                     (erase-buffer)
-                     (call-process-shell-command mu4e-html2text-command tmp-file t t)
-                     (delete-file tmp-file)))
+		    ((stringp mu4e-html2text-command)
+		      (let* ((tmp-file (mu4e-make-temp-file "html")))
+			(write-region (point-min) (point-max) tmp-file)
+			(erase-buffer)
+			(call-process-shell-command mu4e-html2text-command tmp-file t t)
+			(delete-file tmp-file)))
 		    ((functionp mu4e-html2text-command)
 		      (funcall mu4e-html2text-command))
 		    (t (mu4e-error "Invalid `mu4e-html2text-command'")))
@@ -206,26 +210,28 @@ be changed by setting `mu4e-view-prefer-html'."
 
 (defun mu4e-message-contact-field-matches (msg cfield rx)
   "Checks whether any of the of the contacts in field
-CFIELD (either :to, :from, :cc or :bcc) of msg MSG matches (with
-their name or e-mail address) regular expressions RX. If there is a
-match, return non-nil; otherwise return nil. RX can also be a list
-of regular expressions, in which case any of those are tried for a
-match."
-  (unless (member cfield '(:to :from :bcc :cc))
-    (mu4e-error "Not a contacts field (%S)" cfield))
-  (if (listp rx)
-    ;; if rx is a list, try each one of them for a match
-    (find-if
-      (lambda (a-rx) (mu4e-message-contact-field-matches msg cfield a-rx))
-      rx)
-    ;; not a list, check the rx
-    (find-if
-      (lambda (ct)
-	(let ((name (car ct)) (email (cdr ct)))
-	  (or
-	    (and name  (string-match rx name))
-	    (and email (string-match rx email)))))
-      (mu4e-message-field msg cfield))))
+CFIELD (either :to, :from, :cc or :bcc, or a list of those) of
+msg MSG matches (with their name or e-mail address) regular
+expressions RX. If there is a match, return non-nil; otherwise
+return nil. RX can also be a list of regular expressions, in
+which case any of those are tried for a match."
+  (if (and cfield (listp cfield))
+    (or (mu4e-message-contact-field-matches msg (car cfield) rx)
+      (mu4e-message-contact-field-matches msg (cdr cfield) rx))
+    (when cfield
+      (if (listp rx)
+	;; if rx is a list, try each one of them for a match
+	(find-if
+	  (lambda (a-rx) (mu4e-message-contact-field-matches msg cfield a-rx))
+	  rx)
+	;; not a list, check the rx
+	(find-if
+	  (lambda (ct)
+	    (let ((name (car ct)) (email (cdr ct)))
+	      (or
+		(and name  (string-match rx name))
+		(and email (string-match rx email)))))
+	  (mu4e-message-field msg cfield))))))
 
 (defun mu4e-message-contact-field-matches-me (msg cfield)
   "Checks whether any of the of the contacts in field
@@ -256,5 +262,23 @@ point in eiter the headers buffer or the view buffer."
   (plist-get (mu4e-message-at-point) field))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
+(defun mu4e-shr2text ()
+  "Html to text using the shr engine; this can be used in
+`mu4e-html2text-command' in a new enough emacs. Based on code by
+Titus von der Malsburg."
+  (interactive)
+  (let ((dom (libxml-parse-html-region (point-min) (point-max)))
+	 ;; When HTML emails contain references to remote images,
+	 ;; retrieving these images leaks information. For example,
+	 ;; the sender can see when I openend the email and from which
+	 ;; computer (IP address). For this reason, it is preferrable
+	 ;; to not retrieve images.
+	 ;; See this discussion on mu-discuss:
+	 ;; https://groups.google.com/forum/#!topic/mu-discuss/gr1cwNNZnXo
+	 (shr-inhibit-images t))
+    (erase-buffer)
+    (shr-insert-document dom)
+    (goto-char (point-min))))
 
 (provide 'mu4e-message)

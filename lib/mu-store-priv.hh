@@ -1,6 +1,6 @@
 /* -*-mode: c++; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8-*- */
 /*
-** Copyright (C) 2011-2012  <djcb@djcbsoftware.nl>
+** Copyright (C) 2011-2016  <djcb@djcbsoftware.nl>
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -148,6 +148,8 @@ public:
 				g_warning ("ref count != 0");
 
 			mu_contacts_destroy (_contacts);
+			_contacts = NULL;
+			
 			if (!_read_only)
 				mu_store_flush (this);
 
@@ -177,7 +179,8 @@ public:
 			mu_contacts_clear (_contacts);
 	}
 
-	std::string get_uid_term (const char *path) const;
+	// not re-entrant; stays valid until called again
+	const char *get_uid_term (const char *path) const;
 
 	MuContacts* contacts() { return _contacts; }
 

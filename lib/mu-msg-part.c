@@ -244,10 +244,34 @@ cleanup_filename (char *fname)
 {
 	gchar *cur;
 
-	/* remove slashes, spaces, colons... */
+	/* replace control characters, slashes,colons by a '-' */
 	for (cur = fname; *cur; ++cur)
-		if (*cur == '/' || *cur == ' ' || *cur == ':')
+		if (*cur < ' ' || *cur == '/' || *cur == ':')
 			*cur = '-';
+}
+
+
+/*
+ * when a part doesn't have a filename, it can be useful to 'guess' one based on
+ * its mime-type, which allows other tools to handle them correctly, e.g. from
+ * mu4e.
+ *
+ * For now, we only handle calendar invitations in that way, but others may
+ * follow.
+ */
+static char*
+guess_file_name (GMimeObject *mobj, unsigned index)
+{
+	GMimeContentType *ctype;
+
+	ctype = g_mime_object_get_content_type (mobj);
+
+	/* special case for calendars; map to '.vcs' */
+	if (g_mime_content_type_is_type (ctype, "text", "calendar"))
+		return g_strdup_printf ("vcal-%u.vcs", index);
+
+	/* fallback */
+	return g_strdup_printf ("%u.msgpart", index);
 }
 
 
@@ -279,10 +303,11 @@ mime_part_get_filename (GMimeObject *mobj, unsigned index,
 	}
 
 	if (!fname)
-		fname =	g_strdup_printf ("%u.part", index);
-
+		fname = guess_file_name (mobj, index);
+	
 	/* remove slashes, spaces, colons... */
 	cleanup_filename (fname);
+
 	return fname;
 }
 
@@ -780,6 +805,11 @@ mu_msg_part_save (MuMsg *msg, MuMsgOptions opts,
 		part = (GMimeObject*)g_mime_message_part_get_message
 			(GMIME_MESSAGE_PART (part));
 
+	if (!part) {
+		g_set_error (err, MU_ERROR_DOMAIN, MU_ERROR_GMIME,
+			     "part %u does not exist", partidx);
+		return FALSE;
+	}
 	if (!GMIME_IS_PART(part) && !GMIME_IS_MESSAGE(part)) {
 		g_set_error (err, MU_ERROR_DOMAIN, MU_ERROR_GMIME,
 			     "unexpected type %s for part %u",

@@ -1,6 +1,6 @@
 /* -*-mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-*/
 /*
-** Copyright (C) 2008-2013 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
+** Copyright (C) 2008-2016 Dirk-Jan C. Binnema <djcb@djcbsoftware.nl>
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -280,20 +280,18 @@ clear_str (char* str)
 }
 
 
-
-
 gboolean
 mu_contacts_add (MuContacts *self, const char *addr, const char *name,
 		 gboolean personal, time_t tstamp)
 {
-	ContactInfo *cinfo;
-	const char *group;
+	ContactInfo	*cinfo;
+	const char	*group;
 
 	g_return_val_if_fail (self, FALSE);
 	g_return_val_if_fail (addr, FALSE);
 
-	group	= encode_email_address (addr);
-
+	group = encode_email_address (addr);
+	
 	cinfo = (ContactInfo*) g_hash_table_lookup (self->_hash, group);
 	if (!cinfo) {
 		char *addr_dc;
@@ -304,6 +302,11 @@ mu_contacts_add (MuContacts *self, const char *addr, const char *name,
 					  tstamp, 1);
 		g_hash_table_insert (self->_hash, g_strdup(group), cinfo);
 	} else {
+		/* if the contact is ever used in a personal way, it's
+		 * personal */
+		if (personal)
+			cinfo->_personal = TRUE;
+		
 		if (cinfo->_tstamp < tstamp) {
 			if (!mu_str_is_empty(name)) {
 				/* update the name to the last one used, unless it's
@@ -416,21 +419,23 @@ each_keyval (const char *group, ContactInfo *cinfo, MuContacts *self)
 				(int)cinfo->_freq);
 }
 
-static gboolean
-serialize_cache (MuContacts *self)
+gboolean
+mu_contacts_serialize (MuContacts *self)
 {
-	gchar *data;
-	gsize len;
-	gboolean rv;
+	gchar		*data;
+	gsize		 len;
+	gboolean	 rv;
+
+	g_return_val_if_fail (self, FALSE);
 
 	g_hash_table_foreach (self->_hash, (GHFunc)each_keyval, self);
 
 	/* Note: err arg is unused */
-	data = g_key_file_to_data (self->_ccache, &len, NULL);
+	data	    = g_key_file_to_data (self->_ccache, &len, NULL);
 	if (len) {
-		GError *err;
+		GError	*err;
 		err = NULL;
-		rv = g_file_set_contents (self->_path, data, len, &err);
+		rv  = g_file_set_contents (self->_path, data, len, &err);
 		if (!rv) {
 			g_warning ("failed to serialize cache to %s: %s",
 				   self->_path, err->message);
@@ -449,12 +454,11 @@ mu_contacts_destroy (MuContacts *self)
 	if (!self)
 		return;
 
-	if (self->_ccache && self->_dirty) {
-		serialize_cache (self);
+	if (self->_ccache && self->_dirty &&
+	    mu_contacts_serialize (self))
 		MU_WRITE_LOG("serialized contacts cache %s",
 			     self->_path);
-	}
-
+	
 	if (self->_ccache)
 		g_key_file_free (self->_ccache);
 
@@ -466,9 +470,8 @@ mu_contacts_destroy (MuContacts *self)
 	g_free (self);
 }
 
-
-/* note, we will *own* the name, email we get, and we'll free them in
- * the end... */
+/* note, we will *own* the name, email we get, and we'll free them in the
+ * end... */
 static ContactInfo *
 contact_info_new (char *email, char *name, gboolean personal, time_t tstamp,
 		  unsigned freq)
